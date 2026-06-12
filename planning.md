@@ -26,7 +26,7 @@ This tool will search through a mock dataset to look for an item that most close
 
 **What it returns:**
 <!-- Describe the return value — what fields does a result contain? -->
-The result should contain a list of matching items sorted by relevance. Each item contains: a unique itemID, item name, size, price, source (e.g., "Depop", "Poshmark"), condition (e.g., "Good condition", "Like new"), and a description of how the item matches the search description from the user.
+The result should contain a list of matching items sorted by relevance. Each item contains: `id` (e.g., "lst_006"), `title`, `size`, `price`, `platform` (e.g., "depop", "poshmark", "thredUp"), `condition` (one of: "excellent", "good", "fair"), `brand` (str or null), and a `match_reason` describing how the item matches the search.
 
 **What happens if it fails or returns nothing:**
 <!-- What should the agent do if no listings match? -->
@@ -45,7 +45,7 @@ Tool suggests an outfit based on the mock dataset. The outfit should include a t
 - `new_item` (dict): 
      Required:
           description (str): free-text keywords (e.g., "vintage graphic tee, short-sleeve").
-          category (str): one of top, bottom, shoes, socks, accessory, outerwear.
+          category (str): one of tops, bottoms, shoes, outerwear, accessories.
      Optional:
           size (str): XS/S/M/L/XL or numeric pant sizes (24, 26, …) or US sizes (0, 2, …).
           color (str)
@@ -56,19 +56,15 @@ Tool suggests an outfit based on the mock dataset. The outfit should include a t
           fit (str): slim, regular, oversized
           required (bool): if true, outfit must include this item
 
-- `wardrobe` (dict): 
+- `wardrobe` (list[dict]):
      Each item object:
-          id (str): unique id
-          name (str)
-          category (str)
-          size (str or list[str])
+          id (str): unique id (e.g., "w_001")
+          name (str): short description of the piece
+          category (str): one of tops, bottoms, shoes, outerwear, accessories
           colors (list[str])
-          price (float)
-          tags (list[str]) — searchable keywords like vintage, graphic, denim
-          available (bool)
-          rating (float, optional) — user preference score
-          image_url (str, optional)
-     Semantics: prefer items with available=true; match by category, size, colors, and tags.
+          style_tags (list[str]) — style descriptors like vintage, denim, streetwear
+          notes (str, optional): fit notes or how the user styles it
+     Semantics: match by category, colors, and style_tags; use notes for additional styling context.
 
 **What it returns:**
 <!-- Describe the return value -->
@@ -100,7 +96,7 @@ Generates a short, shareable description of a complete outfit — the kind of th
      Required. Complete outfit object produced by suggest_outfit.
      Required fields: top, bottom, shoes — each an item object.
      Optional fields: socks (item), accessories (list[item]).
-     Item object shape: id (str), name (str), category (str), price (float), size (str), colors (list[str]), image_url (str, optional), source (str: "wardrobe" or "listing"), match_score (0..1, optional).
+     Item object shape: id (str), title (str), category (str), price (float), size (str), colors (list[str]), brand (str or null), platform (str), origin (str: "wardrobe" or "listing"), match_score (0..1, optional).
      Metadata: total_price (float), match_reason (str), match_scores (dict).
 - `new_item` (dict): Optional. The newly found listing (from search_listings) that anchors the outfit. Same item object shape as above. Used so the caption can highlight the new piece (e.g., reference its source or price).
 - `style_tone` (str): Optional. Tone for caption (playful, minimal, edgy, romantic). Default: casual.
@@ -110,7 +106,7 @@ Generates a short, shareable description of a complete outfit — the kind of th
 <!-- Describe the return value -->
 `fit_card` (dict):
      - caption (str): single human-friendly caption summarizing the look.
-     - key_pieces (list[dict]): short entries for each piece: { "role": "top", "name": "...", "id": "...", "price": 0.0 }.
+     - key_pieces (list[dict]): short entries for each piece: { "role": "top", "title": "...", "id": "...", "price": 0.0 }.
      - price_summary (str): e.g., "Total: $xx (affordable/average/expensive)".
      - tags (list[str]): style tags like vintage, casual, date-night.
      - share_text (str, optional): alternate phrasing for sharing.
@@ -132,12 +128,14 @@ Generates a short, shareable description of a complete outfit — the kind of th
 
 **What it does:**
 <!-- Describe what this tool does in 1–2 sentences -->
-shows the user a rating of "high, average, low" for pricing compared to other similar items. 
+Shows the user a rating of "high, average, low" for pricing compared to other similar items. Called only when the user signals price concern — if the query mentions "good deal", "worth it", "is this cheap", or includes a tight max_price, the agent calls it. Otherwise it doesn't.
+
+The requirements say the loop should "respond to what it receives" — so the most defensible approach for your planning.md is the second or third option, where something in the context actually triggers the call. That way compare_prices has a clear reason to exist in the loop rather than just always running at the end.
 
 **Input parameters:**
 <!-- List each parameter, its type, and what it represents -->
 - `item` (dict) — Required. Item to evaluate.
-id (str), name (str), category (str), price (float), tags (list[str], optional), size (str, optional), colors (list[str], optional), source (str: "wardrobe" or "listing", optional)
+id (str), title (str), category (str), price (float), style_tags (list[str], optional), size (str, optional), colors (list[str], optional), brand (str or null, optional), platform (str, optional)
 - `comparison_pool` (list[dict]) — Optional. Explicit list of items to compare against; same item shape as above. If omitted, use available listings/wardrobe data.
 - `granularity` (str) — Optional. One of category, category+tags, or global. Default: category.
 - `thresholds` (dict) — Optional. Numeric cutoffs for mapping percentile → rating, e.g. { "low": 0.33, "high": 0.66 } (default uses thirds).
@@ -218,16 +216,59 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 Write out what a full user interaction looks like from start to finish — tool call by tool call. Use a specific example query.
 
+2-3 sentence description of what FitFindr needs to do:
+The agent should call the search_listings tool to find a vintage graphic tee under $30 then calls the suggest_outfit tool to suggest an outfit that fits the vintage graphic tee that the search_listings tool picked out. Then, the create_fit tool is called to provide a user-friendly caption about the outfit. Lastly, the compare_prices tool is called since the user showed price sensitivity for wanting it to be under $30. 
+
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
 **Step 1:**
-<!-- What does the agent do first? Which tool is called? With what input? -->
+The agent calls `search_listings("vintage graphic tee", max_price=30.0)`.
+
+Returns 2 results sorted by relevance (no third close match exists in the dataset):
+
+    [
+      "Graphic Tee — 2003 Tour Bootleg Style — $24, Depop, Good condition.",
+      "Vintage Band Tee — Faded Grey — $19, Depop, Fair condition."
+    ]
+
+The agent picks the top result (lst_006) — better condition, stronger tag match.
 
 **Step 2:**
-<!-- What happens next? What was returned from step 1? What tool is called now? -->
+The agent calls `suggest_outfit(new_item=<lst_006>, wardrobe=<user's wardrobe>)`.
+
+The user's wardrobe includes:
+
+- w_001: Baggy straight-leg jeans, dark wash (bottoms)
+- w_007: Chunky white sneakers (shoes)
+
+Returns:
+
+    "Pair this with your baggy dark-wash jeans and chunky sneakers for an easy 90s streetwear look.
+    Leave the tee untucked and let it drape — the boxy fit does the work."
 
 **Step 3:**
-<!-- Continue until the full interaction is complete -->
+The agent calls `create_fit_card(outfit=<suggest_outfit result>, new_item=<lst_006>)`.
+
+Returns:
+
+    "found this boxy graphic tee on depop for $24 and it was basically made for my baggy jeans.
+    full look: graphic tee + dark-wash straights + chunky sneakers."
+
+**Step 4:**
+The agent calls `compare_prices(item=<lst_006>)`, comparing against all tops in the listings dataset (15 items, prices ranging $15–$35).
+
+Returns:
+
+    { "rating": "high", "message": "Slightly above average for a vintage top, but fair for a graphic tee in good condition." }
 
 **Final output to user:**
-<!-- What does the user actually see at the end? -->
+
+    Found 2 vintage graphic tees under $30:
+      • Graphic Tee — 2003 Tour Bootleg Style — $24, Depop, Good condition.
+      • Vintage Band Tee — Faded Grey — $19, Depop, Fair condition.
+
+    Top pick: the $24 graphic tee. Pair it with your baggy dark-wash jeans and chunky sneakers
+    for an easy 90s streetwear look. Leave it untucked — the boxy fit does the work.
+
+    Pricing note: slightly above average for tops, but fair for a graphic tee in good condition.
+
