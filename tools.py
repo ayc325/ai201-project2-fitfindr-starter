@@ -224,51 +224,71 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     return response.choices[0].message.content.strip()
 
 # ── Tool 4: compare_prices ───────────────────────────────────────────────────
-def compare_prices(new_item: dict, listings: dict) -> str:
+def compare_prices(
+    new_item: dict,
+    comparison_pool: list[dict] | None = None,
+) -> str:
     """
-    Compare the thrifted item's price to similar items in the user's wardrobe.
+    Compare the thrifted item's price against similar items by category.
 
     Args:
-        new_item: A listing dict (the item the user is considering buying).
-        listings: Listings dict with an 'items' key containing a list of
-                  item dicts. 
+        new_item:        A listing dict (the item the user is considering buying).
+        comparison_pool: A list of listing dicts to compare against (e.g. the
+                         output of search_listings). If None or empty, falls back
+                         to all listings from load_listings() filtered by the same
+                         category as new_item.
 
     Returns:
-        A string summarizing how the new item's price compares to similar pieces
-        in the listings. If the listings are empty, return a message indicating
-        that no price comparison can be made.
-
-    TODO: 
-        1. Guard against an empty or whitespace-only outfit string.
-        2. Build a prompt that gives the LLM the item price and the prices of similar items in the listings.
-        3. Call the LLM and return the response.
+        A string with a low / average / high rating and a casual explanation.
+        Returns a no-data message string if no comparison items exist — does NOT
+        raise an exception.
     """
-    if not listings.get("items"):
-        return "No similar items in the listings to compare prices with."
+    if not new_item.get("price"):
+        return "Insufficient comparison data to rate this item."
 
-    client = _get_groq_client()
-    similar_items = [item for item in listings["items"] if item["category"] == new_item["category"]]
-    
-    if not similar_items:
-        return "No similar items in the listings to compare prices with."
+    # Build pool: use provided list, or fall back to full dataset filtered by category
+    pool = [i for i in (comparison_pool or []) if i.get("category") == new_item["category"]]
+    if not pool:
+        all_listings = load_listings()
+        pool = [i for i in all_listings if i.get("category") == new_item["category"]
+                and i["id"] != new_item.get("id")]
 
+    if not pool:
+        return "Insufficient comparison data to rate this item."
+
+    prices = sorted(i["price"] for i in pool)
+    item_price = new_item["price"]
+    below = sum(1 for p in prices if p < item_price)
+    percentile = below / len(prices)
+
+    if percentile <= 0.33:
+        rating = "low"
+    elif percentile <= 0.66:
+        rating = "average"
+    else:
+        rating = "high"
+
+    avg_price = sum(prices) / len(prices)
     price_comparison = "\n".join(
-        f"- {item['title']} (${item['price']:.2f} on {item['platform']})"
-        for item in similar_items
+        f"- {i['title']} (${i['price']:.2f})" for i in pool[:8]
     )
 
+    client = _get_groq_client()
     prompt = (
-        f"You are comparing the price of a thrifted item to similar pieces in the market.\n\n"
-        f"Thrifted item: {new_item['title']} — ${new_item['price']:.2f} on {new_item['platform']}\n"
-        f"Similar items:\n{price_comparison}\n\n"
-        "Summarize how the new item's price compares to these similar pieces. Is it a good deal? "
-        "Be concise and informative."
+        f"You're helping a thrift shopper decide if an item is priced fairly.\n\n"
+        f"Item: {new_item['title']} — ${item_price:.2f} on {new_item.get('platform', 'a thrift platform')}\n"
+        f"Category average: ${avg_price:.2f} across {len(prices)} similar items\n"
+        f"Price rating: {rating}\n"
+        f"Sample similar items:\n{price_comparison}\n\n"
+        f"Write 1–2 casual sentences explaining whether this is a good deal. "
+        f"Mention the rating ({rating}) and the category average naturally. Under 60 words."
     )
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7,
-        max_tokens=150,
+        max_tokens=120,
     )
-    return response.choices[0].message.content.strip()
+    message = response.choices[0].message.content.strip()
+    return f"[{rating.upper()}] {message}"
