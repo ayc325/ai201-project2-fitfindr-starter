@@ -135,7 +135,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     # Step 5: Suggest outfit — empty wardrobe → stop per planning.md error table
     if not wardrobe.get("items"):
         session["error"] = (
-            "Your wardrobe is empty. Add some pieces to get outfit suggestions."
+            "Wardrobe support for new users is not yet implemented. "
+            "Try running with get_example_wardrobe() to see outfit suggestions."
         )
         return session
 
