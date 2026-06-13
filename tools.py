@@ -127,8 +127,47 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
 
     Before writing code, fill in the Tool 2 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    client = _get_groq_client()
+    item_summary = (
+        f"Item: {new_item['title']}\n"
+        f"Category: {new_item['category']}\n"
+        f"Style tags: {', '.join(new_item['style_tags'])}\n"
+        f"Colors: {', '.join(new_item['colors'])}\n"
+        f"Description: {new_item['description']}"
+    )
+
+    wardrobe_items = wardrobe.get("items", [])
+
+    if not wardrobe_items:
+        prompt = (
+            f"A user is considering buying this thrifted item:\n{item_summary}\n\n"
+            "Their wardrobe is empty. Give them general styling advice: what types of "
+            "pieces pair well with this item, what vibe or occasions it suits, and 1–2 "
+            "example outfit formulas (e.g., 'pair with wide-leg trousers and chunky sneakers'). "
+            "Be specific and keep it under 150 words."
+        )
+    else:
+        wardrobe_text = "\n".join(
+            f"- {w['name']} ({w['category']}, colors: {', '.join(w['colors'])}, "
+            f"tags: {', '.join(w['style_tags'])})"
+            + (f" — {w['notes']}" if w.get("notes") else "")
+            for w in wardrobe_items
+        )
+        prompt = (
+            f"A user is considering buying this thrifted item:\n{item_summary}\n\n"
+            f"Their current wardrobe:\n{wardrobe_text}\n\n"
+            "Suggest 1–2 complete outfits that incorporate the new item with specific "
+            "pieces from the wardrobe above. Name each wardrobe piece you use. "
+            "Keep it casual, specific, and under 200 words."
+        )
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=300,
+    )
+    return response.choices[0].message.content.strip()
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -160,5 +199,76 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
 
     Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "Error: no outfit suggestion provided — run suggest_outfit first before creating a fit card."
+
+    client = _get_groq_client()
+    prompt = (
+        f"You are writing an Instagram/TikTok OOTD caption. Keep it casual and authentic — "
+        f"like a real person posting their fit, not a brand ad.\n\n"
+        f"Thrifted item: {new_item['title']} — ${new_item['price']:.2f} on {new_item['platform']}\n"
+        f"Outfit: {outfit}\n\n"
+        "Write a 2–4 sentence caption that:\n"
+        "- Sounds like a real person, not a product description\n"
+        "- Mentions the item name, price, and platform naturally (once each)\n"
+        "- Captures the specific vibe of this outfit\n"
+        "Return only the caption text, no hashtags, no intro line."
+    )
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.9,
+        max_tokens=200,
+    )
+    return response.choices[0].message.content.strip()
+
+# ── Tool 4: compare_prices ───────────────────────────────────────────────────
+def compare_prices(new_item: dict, listings: dict) -> str:
+    """
+    Compare the thrifted item's price to similar items in the user's wardrobe.
+
+    Args:
+        new_item: A listing dict (the item the user is considering buying).
+        listings: Listings dict with an 'items' key containing a list of
+                  item dicts. 
+
+    Returns:
+        A string summarizing how the new item's price compares to similar pieces
+        in the listings. If the listings are empty, return a message indicating
+        that no price comparison can be made.
+
+    TODO: 
+        1. Guard against an empty or whitespace-only outfit string.
+        2. Build a prompt that gives the LLM the item price and the prices of similar items in the listings.
+        3. Call the LLM and return the response.
+    """
+    if not listings.get("items"):
+        return "No similar items in the listings to compare prices with."
+
+    client = _get_groq_client()
+    similar_items = [item for item in listings["items"] if item["category"] == new_item["category"]]
+    
+    if not similar_items:
+        return "No similar items in the listings to compare prices with."
+
+    price_comparison = "\n".join(
+        f"- {item['title']} (${item['price']:.2f} on {item['platform']})"
+        for item in similar_items
+    )
+
+    prompt = (
+        f"You are comparing the price of a thrifted item to similar pieces in the market.\n\n"
+        f"Thrifted item: {new_item['title']} — ${new_item['price']:.2f} on {new_item['platform']}\n"
+        f"Similar items:\n{price_comparison}\n\n"
+        "Summarize how the new item's price compares to these similar pieces. Is it a good deal? "
+        "Be concise and informative."
+    )
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=150,
+    )
+    return response.choices[0].message.content.strip()

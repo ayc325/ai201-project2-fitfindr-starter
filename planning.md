@@ -100,7 +100,7 @@ Generates a short, shareable description of a complete outfit — the kind of th
      Optional fields: socks (item), accessories (list[item]).
      Item object shape: id (str), title (str), category (str), price (float), size (str), colors (list[str]), brand (str or null), platform (str), origin (str: "wardrobe" or "listing"), match_score (0..1, optional).
      Metadata: total_price (float), match_reason (str), match_scores (dict).
-- `new_item` (dict): Optional. The newly found listing (from search_listings) that anchors the outfit. Same item object shape as above. Used so the caption can highlight the new piece (e.g., reference its source or price).
+- `new_item` (dict): The newly found listing (from search_listings) that anchors the outfit. Same item object shape as above. Used so the caption can highlight the new piece (e.g., reference its source or price).
 - `style_tone` (str): Optional. Tone for caption (playful, minimal, edgy, romantic). Default: casual.
 - `length` (str): Optional. short or long caption. Default: short.
 
@@ -138,7 +138,7 @@ The requirements say the loop should "respond to what it receives" — so the mo
 <!-- List each parameter, its type, and what it represents -->
 - `item` (dict) — Required. Item to evaluate.
 id (str), title (str), category (str), price (float), style_tags (list[str], optional), size (str, optional), colors (list[str], optional), brand (str or null, optional), platform (str, optional)
-- `comparison_pool` (list[dict]) — Optional. Explicit list of items to compare against; same item shape as above. If omitted, use available listings/wardrobe data.
+- `comparison_pool` (list[dict]) — Explicit list of items to compare against; same item shape as above. If omitted, use available listings data.
 - `granularity` (str) — Optional. One of category, category+tags, or global. Default: category.
 - `thresholds` (dict) — Optional. Numeric cutoffs for mapping percentile → rating, e.g. { "low": 0.33, "high": 0.66 } (default uses thirds).
 
@@ -269,9 +269,9 @@ Planning Loop
 
 - I'll give Claude my Tool 2 spec (inputs, return value, failure mode) and ask it to implement suggest_outfit() using load_wardrobe() from the data loader and from the output of search_listings - then test it against 3 queries before trusting it.
 
-- I'll give Claude my Tool 3 spec (inputs, return value, failure mode) and ask it to implement create_fit_card() using the outfit from suggest_outfit() - then test it against 3 queries before trusting it.
+- I'll give Claude my Tool 3 spec (inputs, return value, failure mode) and ask it to implement create_fit_card() using the outfit from suggest_outfit() and the new_item output of search_listings - then test it against 3 queries before trusting it.
 
-- I'll give Claude my Tool 4 spec (inputs, return value, failure mode) and ask it to implement compare_prices() using the output of search_listings and using load_listings() from the data loader - then test it against 3 queries before trusting it.
+- I'll give Claude my Tool 4 spec (inputs, return value, failure mode) and ask it to implement compare_prices() using the output of search_listings, specifically the price and using load_listings() from the data loader to find similar items' prices - then test it against 3 queries before trusting it.
 
 **Milestone 4 — Planning loop and state management:**
 
