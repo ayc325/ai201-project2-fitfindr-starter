@@ -18,7 +18,9 @@ Usage (once implemented):
     print(result["error"])   # None on success
 """
 
-from tools import search_listings, suggest_outfit, create_fit_card
+import re
+
+from tools import search_listings, suggest_outfit, create_fit_card, compare_prices
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -41,6 +43,7 @@ def _new_session(query: str, wardrobe: dict) -> dict:
         "wardrobe": wardrobe,        # user's wardrobe dict
         "outfit_suggestion": None,   # string returned by suggest_outfit
         "fit_card": None,            # string returned by create_fit_card
+        "price_context": None,       # string returned by compare_prices (optional)
         "error": None,               # set if the interaction ended early
     }
 
@@ -92,9 +95,60 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     Before writing code, complete the Planning Loop and State Management sections
     of planning.md — your implementation should match what you described there.
     """
-    # TODO: implement the planning loop
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+
+    # Step 2: Parse the query into description, size, max_price using regex
+    price_match = re.search(
+        r'\b(?:under|below|max|less\s+than|up\s+to)\s*\$?\s*(\d+(?:\.\d+)?)',
+        query, re.IGNORECASE,
+    )
+    size_match = re.search(
+        r'\b(?:size\s+|in\s+)?(XXL|XL|XS|S/M|S|M|L)\b',
+        query, re.IGNORECASE,
+    )
+    max_price = float(price_match.group(1)) if price_match else None
+    size = size_match.group(1).upper() if size_match else None
+    desc = query
+    for match in filter(None, [price_match, size_match]):
+        desc = desc[:match.start()] + " " + desc[match.end():]
+    desc = re.sub(r'\b(?:size|in)\b', ' ', desc, flags=re.IGNORECASE)
+    desc = re.sub(r'\s+', ' ', desc).strip(' ,.')
+    session["parsed"] = {"description": desc, "size": size, "max_price": max_price}
+
+    # Step 3: Search listings
+    session["search_results"] = search_listings(
+        description=desc,
+        size=size,
+        max_price=max_price,
+    )
+    if not session["search_results"]:
+        session["error"] = (
+            f"No listings found matching \"{query}\". "
+            "Try broader keywords, a higher budget, or a different size."
+        )
+        return session
+
+    # Step 4: Select top result
+    session["selected_item"] = session["search_results"][0]
+    item = session["selected_item"]
+
+    # Step 5: Suggest outfit — empty wardrobe → stop per planning.md error table
+    if not wardrobe.get("items"):
+        session["error"] = (
+            "Your wardrobe is empty. Add some pieces to get outfit suggestions."
+        )
+        return session
+
+    session["outfit_suggestion"] = suggest_outfit(item, wardrobe)
+
+    # Step 6: Create fit card
+    session["fit_card"] = create_fit_card(session["outfit_suggestion"], item)
+
+    # Step 6b: Compare prices if max_price was given or user signals price concern
+    _price_keywords = {"good deal", "worth it", "cheap", "expensive", "fair", "value", "price"}
+    if max_price is not None or any(kw in query.lower() for kw in _price_keywords):
+        session["price_context"] = compare_prices(item, session["search_results"])
+
     return session
 
 
