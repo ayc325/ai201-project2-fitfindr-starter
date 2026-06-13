@@ -265,9 +265,19 @@ Planning Loop
 
 **Milestone 3 — Individual tool implementations:**
 
+- I'll give Claude my Tool 1 spec (inputs, return value, failure mode) and ask it to implement search_listings() using load_listings() from the data loader - then test it against 3 queries before trusting it.
+
+- I'll give Claude my Tool 2 spec (inputs, return value, failure mode) and ask it to implement suggest_outfit() using load_wardrobe() from the data loader and from the output of search_listings - then test it against 3 queries before trusting it.
+
+- I'll give Claude my Tool 3 spec (inputs, return value, failure mode) and ask it to implement create_fit_card() using the outfit from suggest_outfit() - then test it against 3 queries before trusting it.
+
+- I'll give Claude my Tool 4 spec (inputs, return value, failure mode) and ask it to implement compare_prices() using the output of search_listings and using load_listings() from the data loader - then test it against 3 queries before trusting it.
 
 **Milestone 4 — Planning loop and state management:**
 
+- I'll give Claude my planning loop and architecture and ask it to implement the planning loop using the tools already implemented from Milestone 3 then iterating on the output of the changes before finalizing the edits.
+
+- I'll give Claude the state management and ask it to revise the planning loop to include state management then iterating on the output of the changes before finalizing the edits.
 
 ---
 
