@@ -156,100 +156,55 @@ id (str), title (str), category (str), price (float), style_tags (list[str], opt
 
 ---
 
-## Planning Loop
+## How the Planning Loop Works
 
-**How does your agent decide which tool to call next?**
+The loop runs top-to-bottom with early exits at two checkpoints:
 
-1. **Always start with `search_listings`** — parse `description`, `size`, and `max_price` from the user's query. This runs on every interaction, regardless of wardrobe state.
-2. **If results=[]** → stop. Tell the user what to adjust. Do not proceed further.
-3. **If results found** → save `results[0]` as `selected_item`.
-4. **Check wardrobe** — if `wardrobe["items"]` is empty, surface what was found (item title, price, platform) and tell the user outfit suggestions require a wardrobe. Stop — do not call `suggest_outfit` or `create_fit_card`. Adding wardrobe support is not yet implemented.
-5. **If wardrobe has items** → call `suggest_outfit(selected_item, wardrobe)`.
-6. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption.
-7. **After `create_fit_card`** → check if `max_price` was specified in the query, or if the user asked about value (e.g., "good deal", "worth it", "is this cheap"). If either is true, call `compare_prices(selected_item)`. Otherwise, stop.
-8. **Done** — return all results to the user.
+1. **Always start with `search_listings`** — regex extracts `description`, `size`, and `max_price` from the user's query (e.g., "under $30" → `30.0`, "size M" → `"M"`). This runs on every interaction, regardless of wardrobe state. Results stored in `session["search_results"]`.
+
+2. **If results=[]** → stop. `session["error"]` is set with a helpful message. Do not proceed further.
+
+3. **If results found** → save `results[0]` as `session["selected_item"]` (highest relevance score).
+
+4. **Check wardrobe** — if `wardrobe["items"]` is empty, set `session["error"]` with a message telling the user to describe what they own, and return immediately. The listing is still shown (via `session["selected_item"]`); only the outfit and fit card panels are skipped. Do not call `suggest_outfit` or `create_fit_card`.
+
+5. **If wardrobe has items** → call `suggest_outfit(selected_item, wardrobe)`. Result stored in `session["outfit_suggestion"]`.
+
+6. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption. Result stored in `session["fit_card"]`.
+
+7. **Conditionally call `compare_prices`** — only if `max_price` was parsed from the query **or** the query contains a price-concern keyword ("good deal", "worth it", "cheap", "expensive", "fair", "value", "price"). Result stored in `session["price_context"]`. If neither condition is true, `price_context` stays `None`.
+
+8. **Done** — return the session dict to the caller.
 
 ---
 
 ## State Management
 
-**How does information from one tool get passed to the next?**
+The agent maintains a single `session` dict that accumulates results across all tool calls. Nothing is re-fetched once stored.
 
-The agent maintains a session dictionary that accumulates results across tool calls:
-
-- `wardrobe`: loaded once at session start using `get_example_wardrobe()` (or `get_empty_wardrobe()` for new users). Available to every tool call without the user re-entering it.
-- `selected_item`: set after `search_listings` returns results; passed as `new_item` to `suggest_outfit` and as `new_item` to `create_fit_card`.
-- `outfit_suggestion`: set after `suggest_outfit` returns; passed as `outfit` to `create_fit_card`.
-- `fit_card`: set after `create_fit_card` returns; included in the final output to the user.
-- `price_context`: set if `compare_prices` is called; appended to the final output as a pricing note.
-
-No tool re-fetches data that a previous tool already returned. Each tool reads from the session and writes its result back to it.
+| Key | Set when | Passed to |
+| --- | -------- | --------- |
+| `query` | Session start | Used for error messages and keyword detection |
+| `parsed` | After query parsing | `search_listings` (description, size, max_price) |
+| `search_results` | After `search_listings` | `compare_prices` (as comparison pool) |
+| `selected_item` | After picking `results[0]` | `suggest_outfit`, `create_fit_card`, `compare_prices` |
+| `wardrobe` | Session start (passed in) | `suggest_outfit` |
+| `outfit_suggestion` | After `suggest_outfit` | `create_fit_card` |
+| `fit_card` | After `create_fit_card` | Final output |
+| `price_context` | After `compare_prices` (conditional) | Final output |
+| `error` | On any early exit | Signals the caller that the run ended early |
 
 ---
 
-## Error Handling
-
-For each tool, describe the specific failure mode you're handling and what the agent does in response.
+## Error Handling Strategy
 
 | Tool | Failure mode | Agent response |
-|------|-------------|----------------|
-| search_listings | No results match the query | Tell the user: "No listings found matching [query]. Try broader keywords, a higher budget, or a different category." Stop — do not call `suggest_outfit`. |
-| suggest_outfit | Wardrobe is empty | Tell the user: "Your wardrobe is empty. Add some pieces to get outfit suggestions." Stop — do not call `create_fit_card`. |
-| suggest_outfit | Wardrobe has items but no style match | Fall back to listings for complementary pieces. Tell the user: "Your wardrobe didn't have a great match — here's a suggestion from available listings instead." Continue to `create_fit_card`. |
-| create_fit_card | Outfit is missing required pieces (top, bottom, or shoes) | Return error object listing the missing fields. Tell the user the fit card couldn't be generated and which pieces were missing. |
-| compare_prices | No comparable listings / item price missing | Return `{ "rating": "no data", "message": "Not enough data to rate this price." }` Append as a note — do not block the rest of the output. |
+| ---- | ------------ | -------------- |
+| `search_listings` | No results match the query | Sets `session["error"]` and returns immediately. `selected_item` stays `None`. `suggest_outfit` is never called. |
+| `suggest_outfit` | Wardrobe is empty | Sets `session["error"]` with a prompt to describe owned items. Returns immediately — the listing is still shown via `selected_item`. `create_fit_card` is never called. |
+| `create_fit_card` | `outfit` string is empty or whitespace | Returns a descriptive error string — does not raise. Session continues. |
+| `compare_prices` | No comparable listings or item price missing | Returns a no-data message string — does not block the rest of the output. |
 
----
-
-## Architecture
-
-<!-- Draw a diagram of your agent showing how the components connect:
-     User input → Planning Loop → Tools (search_listings, suggest_outfit, create_fit_card)
-                                                                          ↕
-                                                                   State / Session
-     Show what triggers each tool, how state flows between them, and where error paths branch off.
-     ASCII art, a Mermaid diagram (https://mermaid.js.org/syntax/flowchart.html), or an embedded
-     sketch are all fine. You'll share this diagram with an AI tool when asking it to implement
-     the planning loop and each individual tool. -->
-
-User query
-    │
-    ▼
-Planning Loop
-    │
-    ├─► search_listings(description, size, max_price)
-    │       │
-    │       ├── results=[]
-    │       │       └──► [STOP] "No listings found. Try broader keywords or a higher budget."
-    │       │
-    │       └── results=["Graphic Tee — 2003 Tour Bootleg Style — $24, Depop, Good condition.", ...]
-    │                   │
-    │               selected_item = results[0]          ◄── state
-    │                   │
-    ├─► suggest_outfit(selected_item, wardrobe)
-    │       │
-    │       ├── wardrobe=[]
-    │       │       └──► [STOP] "No wardrobe items found. Add some pieces to get outfit suggestions."
-    │       │
-    │       └── outfit = { top: <graphic tee>, bottom: <baggy jeans w_001>, shoes: <chunky sneakers w_007> }
-    │                   │
-    │               outfit_suggestion = outfit          ◄── state
-    │                   │
-    ├─► create_fit_card(outfit_suggestion, selected_item)
-    │       │
-    │       └── fit_card = "found this boxy graphic tee on depop for $24..."
-    │                   │
-    │               fit_card                            ◄── state
-    │                   │
-    └─► compare_prices(selected_item)   [only if max_price is specified or user asks about value]
-            │
-            └── { rating: "high"/"average"/"low", message: "Slightly above average for a vintage top..." }
-                    │
-                    ▼
-            Final output to user
-
-
----
 
 ## AI Tool Plan
 

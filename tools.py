@@ -155,10 +155,12 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
         )
         prompt = (
             f"A user is considering buying this thrifted item:\n{item_summary}\n\n"
-            f"Their current wardrobe:\n{wardrobe_text}\n\n"
-            "Suggest 1–2 complete outfits that incorporate the new item with specific "
-            "pieces from the wardrobe above. Name each wardrobe piece you use. "
-            "Keep it casual, specific, and under 200 words."
+            f"Their current wardrobe (this is the COMPLETE list — do not assume they own anything else):\n{wardrobe_text}\n\n"
+            "Using ONLY the new item and the wardrobe pieces listed above, can you build at least one complete outfit "
+            "(requires at minimum: a top AND a bottom AND shoes)?\n\n"
+            "If yes: suggest 1–2 outfits. Name each wardrobe piece exactly as listed. "
+            "Do not mention, suggest, or reference any clothing not in the wardrobe list. Under 200 words.\n\n"
+            "If no (the wardrobe is missing a top, bottom, or shoes): respond with exactly the word [NO_MATCH] and nothing else."
         )
 
     response = client.chat.completions.create(

@@ -36,18 +36,22 @@ def parse_wardrobe_from_query(query: str) -> dict:
     prompt = (
         "A user typed this query into a thrift-shopping app:\n\n"
         f"\"{query}\"\n\n"
-        "Extract any clothing items they mention owning or usually wearing "
-        "(ignore what they are searching for). "
+        "The user is SEARCHING for one item (the thing they want to buy). "
+        "Your job is to extract ONLY clothing items the user explicitly says they already own or habitually wear. "
+        "An item qualifies ONLY if the user uses one of these exact ownership signals in the query: "
+        "'I wear', 'I own', 'I have', 'I mostly wear', 'I usually wear', 'I usually pair', 'I pair with'. "
+        "If NONE of these ownership signals appear, return {\"items\": []} — no items at all.\n\n"
+        "Do NOT include the item the user is searching for, even if it is clothing.\n\n"
         "Return ONLY a valid JSON object with this structure:\n"
         '{\n  "items": [\n    {\n      "id": "w_001",\n      "name": "item name",\n'
         '      "category": "tops|bottoms|shoes|outerwear|accessories",\n'
         '      "colors": ["color1"],\n      "style_tags": ["tag1"],\n      "notes": ""\n    }\n  ]\n}\n\n'
         "Rules:\n"
-        "- Only include items the user says they own or wear — not what they want to buy\n"
+        "- Only include items the user EXPLICITLY says they own or wear using ownership language above\n"
+        "- If no owned items are mentioned with ownership language, return {\"items\": []}\n"
         "- category must be one of: tops, bottoms, shoes, outerwear, accessories\n"
         "- style_tags should be descriptors like: vintage, casual, streetwear, minimal, grunge\n"
         "- Generate sequential ids: w_001, w_002, etc.\n"
-        "- If no wardrobe items are mentioned, return {\"items\": []}\n"
         "- Return only the JSON, no explanation."
     )
 
@@ -96,8 +100,8 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
     # Step 3: Run the agent
     session = run_agent(query=user_query, wardrobe=wardrobe)
 
-    # Step 4: Surface errors in the first panel
-    if session["error"]:
+    # Step 4: If no listing was found at all, surface the error in the first panel
+    if session["error"] and not session["selected_item"]:
         return session["error"], "", ""
 
     # Step 5: Format the top listing and return all three panels
@@ -113,7 +117,8 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
     if session.get("price_context"):
         listing_text += f"\n\n💰 Price check: {session['price_context']}"
 
-    return listing_text, session["outfit_suggestion"], session["fit_card"]
+    outfit = session["outfit_suggestion"] or (session["error"] if session["error"] else "")
+    return listing_text, outfit, session["fit_card"] or ""
 
 
 # ── interface ─────────────────────────────────────────────────────────────────

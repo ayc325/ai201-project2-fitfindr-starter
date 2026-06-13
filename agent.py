@@ -134,15 +134,31 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
     # Step 5: Suggest outfit — empty wardrobe → show what was found, skip outfit/fit card
     if not wardrobe.get("items"):
-        found = item["title"]
         session["error"] = (
-            f"Found \"{found}\" for ${item['price']:.2f} on {item['platform']}, "
-            "but outfit suggestions require a wardrobe. "
-            "Adding wardrobe support is not yet implemented."
+            "No wardrobe items found. To get outfit ideas, describe what you own in your query — "
+            "e.g. 'I mostly wear baggy jeans and chunky sneakers.'"
         )
         return session
 
     session["outfit_suggestion"] = suggest_outfit(item, wardrobe)
+    raw_suggestion = session["outfit_suggestion"].strip()
+
+    # Reject if the LLM signalled no match
+    no_match = raw_suggestion.startswith("[NO_MATCH]")
+
+    # Reject if the suggestion doesn't actually mention any real wardrobe item by name
+    # (catches hallucination even when the LLM ignores the [NO_MATCH] instruction)
+    wardrobe_names = [w["name"].lower() for w in wardrobe.get("items", [])]
+    references_real_item = any(name in raw_suggestion.lower() for name in wardrobe_names)
+
+    if no_match or not references_real_item:
+        session["outfit_suggestion"] = None
+        session["error"] = (
+            "Your wardrobe doesn't have enough pieces to build a complete outfit with this item "
+            "(needs at least a top, bottom, and shoes). "
+            "Try describing more of what you own in your query."
+        )
+        return session
 
     # Step 6: Create fit card
     session["fit_card"] = create_fit_card(session["outfit_suggestion"], item)

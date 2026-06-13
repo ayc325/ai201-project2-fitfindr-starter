@@ -121,21 +121,21 @@ Your implementation files go in this same directory. There's no required file st
 
 The loop runs top-to-bottom with early exits at two checkpoints:
 
-1. **Parse the query** — regex extracts `max_price` (e.g., "under $30" → `30.0`), `size` (e.g., "size M" → `"M"`), and strips those tokens from the description. The cleaned description, size, and max_price are stored in `session["parsed"]`.
+1. **Always start with `search_listings`** — regex extracts `description`, `size`, and `max_price` from the user's query (e.g., "under $30" → `30.0`, "size M" → `"M"`). This runs on every interaction, regardless of wardrobe state. Results stored in `session["search_results"]`.
 
-2. **Call `search_listings`** — if results come back empty, `session["error"]` is set with a helpful message and the loop returns immediately. `suggest_outfit` is never called with empty input.
+2. **If results=[]** → stop. `session["error"]` is set with a helpful message. Do not proceed further.
 
-3. **Select top result** — `results[0]` is stored as `session["selected_item"]` (highest relevance score).
+3. **If results found** → save `results[0]` as `session["selected_item"]` (highest relevance score).
 
-4. **Check wardrobe** — if `wardrobe["items"]` is empty, `session["error"]` is set and the loop returns immediately. `create_fit_card` is never called without an outfit.
+4. **Check wardrobe** — if `wardrobe["items"]` is empty, set `session["error"]` with a message telling the user to describe what they own, and return immediately. The listing is still shown (via `session["selected_item"]`); only the outfit and fit card panels are skipped. Do not call `suggest_outfit` or `create_fit_card`.
 
-5. **Call `suggest_outfit`** — result stored in `session["outfit_suggestion"]`.
+5. **If wardrobe has items** → call `suggest_outfit(selected_item, wardrobe)`. Result stored in `session["outfit_suggestion"]`.
 
-6. **Call `create_fit_card`** — result stored in `session["fit_card"]`.
+6. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption. Result stored in `session["fit_card"]`.
 
 7. **Conditionally call `compare_prices`** — only if `max_price` was parsed from the query **or** the query contains a price-concern keyword ("good deal", "worth it", "cheap", "expensive", "fair", "value", "price"). Result stored in `session["price_context"]`. If neither condition is true, `price_context` stays `None`.
 
-8. **Return the session dict.**
+8. **Done** — return the session dict to the caller.
 
 ---
 
@@ -161,10 +161,11 @@ The agent maintains a single `session` dict that accumulates results across all 
 
 | Tool | Failure mode | Agent response |
 | ---- | ------------ | -------------- |
-| `search_listings` | No results match the query | Sets `session["error"]` and returns immediately. `suggest_outfit` is never called. |
-| `suggest_outfit` | Wardrobe is empty (new user) | Sets `session["error"]` with a "not yet implemented" message and returns immediately. `create_fit_card` is never called. |
+| `search_listings` | No results match the query | Sets `session["error"]` and returns immediately. `selected_item` stays `None`. `suggest_outfit` is never called. |
+| `suggest_outfit` | Wardrobe is empty | Sets `session["error"]` with a prompt to describe owned items. Returns immediately — the listing is still shown via `selected_item`. `create_fit_card` is never called. |
 | `create_fit_card` | `outfit` string is empty or whitespace | Returns a descriptive error string — does not raise. Session continues. |
 | `compare_prices` | No comparable listings or item price missing | Returns a no-data message string — does not block the rest of the output. |
+
 
 **Concrete example from testing:**
 
