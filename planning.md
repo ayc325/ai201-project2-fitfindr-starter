@@ -80,7 +80,9 @@ outfit (dict) with:
 
 **What happens if it fails or returns nothing:**
 <!-- What should the agent do if the wardrobe is empty or no outfit can be suggested? -->
-     Failure: return "No outfit found" or { "error": "No outfit found", "reason": "wardrobe empty" }.
+
+- Wardrobe empty → return `{ "error": "No outfit found", "reason": "wardrobe empty" }`. Agent tells the user to add wardrobe items and stops.
+- Wardrobe has items but no style match (e.g., all cottagecore, new item is grunge) → return `{ "error": "No outfit found", "reason": "no style match" }`. Agent falls back to searching listings for complementary pieces instead of using the wardrobe, and notes this to the user: "Your wardrobe didn't have a great match — here's a suggestion from available listings instead."
 ---
 
 ### Tool 3: create_fit_card
@@ -157,14 +159,30 @@ id (str), title (str), category (str), price (float), style_tags (list[str], opt
 ## Planning Loop
 
 **How does your agent decide which tool to call next?**
-<!-- Describe the logic your planning loop uses. What does it look at? What conditions change its behavior? How does it know when it's done? -->
+
+1. **Always start with `search_listings`** — parse `description`, `size`, and `max_price` from the user's query. This runs on every interaction.
+2. **If results=[]** → stop. Tell the user what to adjust. Do not proceed to `suggest_outfit`.
+3. **If results found** → save `results[0]` as `selected_item` and call `suggest_outfit(selected_item, wardrobe)`.
+4. **If wardrobe=[]** → stop. Prompt the user to add wardrobe items. Do not proceed to `create_fit_card`.
+5. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption.
+6. **After `create_fit_card`** → check if `max_price` was specified in the query, or if the user asked about value (e.g., "good deal", "worth it", "is this cheap"). If either is true, call `compare_prices(selected_item)`. Otherwise, stop.
+7. **Done** — return all results to the user.
 
 ---
 
 ## State Management
 
 **How does information from one tool get passed to the next?**
-<!-- Describe how your agent stores and accesses state within a session. What data is tracked? How is it passed between tool calls? -->
+
+The agent maintains a session dictionary that accumulates results across tool calls:
+
+- `wardrobe`: loaded once at session start using `get_example_wardrobe()` (or `get_empty_wardrobe()` for new users). Available to every tool call without the user re-entering it.
+- `selected_item`: set after `search_listings` returns results; passed as `new_item` to `suggest_outfit` and as `new_item` to `create_fit_card`.
+- `outfit_suggestion`: set after `suggest_outfit` returns; passed as `outfit` to `create_fit_card`.
+- `fit_card`: set after `create_fit_card` returns; included in the final output to the user.
+- `price_context`: set if `compare_prices` is called; appended to the final output as a pricing note.
+
+No tool re-fetches data that a previous tool already returned. Each tool reads from the session and writes its result back to it.
 
 ---
 
@@ -174,9 +192,11 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 | Tool | Failure mode | Agent response |
 |------|-------------|----------------|
-| search_listings | No results match the query | |
-| suggest_outfit | Wardrobe is empty | |
-| create_fit_card | Outfit input is missing or incomplete | |
+| search_listings | No results match the query | Tell the user: "No listings found matching [query]. Try broader keywords, a higher budget, or a different category." Stop — do not call `suggest_outfit`. |
+| suggest_outfit | Wardrobe is empty | Tell the user: "Your wardrobe is empty. Add some pieces to get outfit suggestions." Stop — do not call `create_fit_card`. |
+| suggest_outfit | Wardrobe has items but no style match | Fall back to listings for complementary pieces. Tell the user: "Your wardrobe didn't have a great match — here's a suggestion from available listings instead." Continue to `create_fit_card`. |
+| create_fit_card | Outfit is missing required pieces (top, bottom, or shoes) | Return error object listing the missing fields. Tell the user the fit card couldn't be generated and which pieces were missing. |
+| compare_prices | No comparable listings / item price missing | Return `{ "rating": "no data", "message": "Not enough data to rate this price." }` Append as a note — do not block the rest of the output. |
 
 ---
 
@@ -190,6 +210,43 @@ For each tool, describe the specific failure mode you're handling and what the a
      ASCII art, a Mermaid diagram (https://mermaid.js.org/syntax/flowchart.html), or an embedded
      sketch are all fine. You'll share this diagram with an AI tool when asking it to implement
      the planning loop and each individual tool. -->
+
+User query
+    │
+    ▼
+Planning Loop
+    │
+    ├─► search_listings(description, size, max_price)
+    │       │
+    │       ├── results=[]
+    │       │       └──► [STOP] "No listings found. Try broader keywords or a higher budget."
+    │       │
+    │       └── results=["Graphic Tee — 2003 Tour Bootleg Style — $24, Depop, Good condition.", ...]
+    │                   │
+    │               selected_item = results[0]          ◄── state
+    │                   │
+    ├─► suggest_outfit(selected_item, wardrobe)
+    │       │
+    │       ├── wardrobe=[]
+    │       │       └──► [STOP] "No wardrobe items found. Add some pieces to get outfit suggestions."
+    │       │
+    │       └── outfit = { top: <graphic tee>, bottom: <baggy jeans w_001>, shoes: <chunky sneakers w_007> }
+    │                   │
+    │               outfit_suggestion = outfit          ◄── state
+    │                   │
+    ├─► create_fit_card(outfit_suggestion, selected_item)
+    │       │
+    │       └── fit_card = "found this boxy graphic tee on depop for $24..."
+    │                   │
+    │               fit_card                            ◄── state
+    │                   │
+    └─► compare_prices(selected_item)   [only if max_price is specified or user asks about value]
+            │
+            └── { rating: "high"/"average"/"low", message: "Slightly above average for a vintage top..." }
+                    │
+                    ▼
+            Final output to user
+
 
 ---
 
@@ -208,7 +265,9 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 **Milestone 3 — Individual tool implementations:**
 
+
 **Milestone 4 — Planning loop and state management:**
+
 
 ---
 
