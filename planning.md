@@ -160,13 +160,14 @@ id (str), title (str), category (str), price (float), style_tags (list[str], opt
 
 **How does your agent decide which tool to call next?**
 
-1. **Always start with `search_listings`** — parse `description`, `size`, and `max_price` from the user's query. This runs on every interaction.
-2. **If results=[]** → stop. Tell the user what to adjust. Do not proceed to `suggest_outfit`.
-3. **If results found** → save `results[0]` as `selected_item` and call `suggest_outfit(selected_item, wardrobe)`.
-4. **If wardrobe=[]** → stop. Prompt the user to add wardrobe items. Do not proceed to `create_fit_card`.
-5. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption.
-6. **After `create_fit_card`** → check if `max_price` was specified in the query, or if the user asked about value (e.g., "good deal", "worth it", "is this cheap"). If either is true, call `compare_prices(selected_item)`. Otherwise, stop.
-7. **Done** — return all results to the user.
+1. **Always start with `search_listings`** — parse `description`, `size`, and `max_price` from the user's query. This runs on every interaction, regardless of wardrobe state.
+2. **If results=[]** → stop. Tell the user what to adjust. Do not proceed further.
+3. **If results found** → save `results[0]` as `selected_item`.
+4. **Check wardrobe** — if `wardrobe["items"]` is empty, surface what was found (item title, price, platform) and tell the user outfit suggestions require a wardrobe. Stop — do not call `suggest_outfit` or `create_fit_card`. Adding wardrobe support is not yet implemented.
+5. **If wardrobe has items** → call `suggest_outfit(selected_item, wardrobe)`.
+6. **If outfit returned** → always call `create_fit_card(outfit, selected_item)` to generate the caption.
+7. **After `create_fit_card`** → check if `max_price` was specified in the query, or if the user asked about value (e.g., "good deal", "worth it", "is this cheap"). If either is true, call `compare_prices(selected_item)`. Otherwise, stop.
+8. **Done** — return all results to the user.
 
 ---
 

@@ -132,11 +132,13 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     session["selected_item"] = session["search_results"][0]
     item = session["selected_item"]
 
-    # Step 5: Suggest outfit — empty wardrobe → stop per planning.md error table
+    # Step 5: Suggest outfit — empty wardrobe → show what was found, skip outfit/fit card
     if not wardrobe.get("items"):
+        found = item["title"]
         session["error"] = (
-            "Wardrobe support for new users is not yet implemented. "
-            "Try running with get_example_wardrobe() to see outfit suggestions."
+            f"Found \"{found}\" for ${item['price']:.2f} on {item['platform']}, "
+            "but outfit suggestions require a wardrobe. "
+            "Adding wardrobe support is not yet implemented."
         )
         return session
 
